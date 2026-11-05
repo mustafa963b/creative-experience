@@ -1,0 +1,100 @@
+name: Deploy Creative Experience to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build site and select output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f package.json ]; then
+            if [ -f pnpm-lock.yaml ]; then
+              corepack enable
+              pnpm install --frozen-lockfile
+              if node -e 'const p=require("./package.json");process.exit(/\\bvite\\b/.test(p.scripts?.build||"")?0:1)'; then
+                pnpm run build -- --base=/creative-experience/
+              else
+                pnpm run build
+              fi
+            elif [ -f yarn.lock ]; then
+              corepack enable
+              yarn install --immutable
+              if node -e 'const p=require("./package.json");process.exit(/\\bvite\\b/.test(p.scripts?.build||"")?0:1)'; then
+                yarn build --base=/creative-experience/
+              else
+                yarn build
+              fi
+            else
+              if [ -f package-lock.json ]; then npm ci; else npm install; fi
+              if node -e 'const p=require("./package.json");process.exit(/\\bvite\\b/.test(p.scripts?.build||"")?0:1)'; then
+                npm run build -- --base=/creative-experience/
+              else
+                npm run build
+              fi
+            fi
+          fi
+
+          for dir in dist build out; do
+            if [ -f "$dir/index.html" ]; then
+              echo "SITE_DIR=$dir" >> "$GITHUB_ENV"
+              echo "Publishing $dir/"
+              exit 0
+            fi
+          done
+
+          if [ -f index.html ] && [ ! -f package.json ]; then
+            mkdir -p _site
+            rsync -a ./ _site/ \
+              --exclude='_site' \
+              --exclude='.*' \
+              --exclude='node_modules' \
+              --exclude='*.lock' \
+              --exclude='package*.json'
+            echo 'SITE_DIR=_site' >> "$GITHUB_ENV"
+            echo 'Publishing static HTML site'
+            exit 0
+          fi
+
+          echo 'ERROR: No deployable index.html found. Check framework and build output.'
+          exit 1
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload built site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_DIR }}
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
