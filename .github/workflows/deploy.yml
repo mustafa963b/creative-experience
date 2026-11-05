@@ -40,7 +40,7 @@ jobs:
             if [ -f pnpm-lock.yaml ]; then
               corepack enable
               pnpm install --frozen-lockfile
-              if node -e 'const p=require("./package.json");process.exit(/\\bvite\\b/.test(p.scripts?.build||"")?0:1)'; then
+              if node -e 'const p=require("./package.json");process.exit(/\bvite\b/.test(p.scripts?.build||"")?0:1)'; then
                 pnpm run build -- --base=/creative-experience/
               else
                 pnpm run build
@@ -48,14 +48,14 @@ jobs:
             elif [ -f yarn.lock ]; then
               corepack enable
               yarn install --immutable
-              if node -e 'const p=require("./package.json");process.exit(/\\bvite\\b/.test(p.scripts?.build||"")?0:1)'; then
+              if node -e 'const p=require("./package.json");process.exit(/\bvite\b/.test(p.scripts?.build||"")?0:1)'; then
                 yarn build --base=/creative-experience/
               else
                 yarn build
               fi
             else
               if [ -f package-lock.json ]; then npm ci; else npm install; fi
-              if node -e 'const p=require("./package.json");process.exit(/\\bvite\\b/.test(p.scripts?.build||"")?0:1)'; then
+              if node -e 'const p=require("./package.json");process.exit(/\bvite\b/.test(p.scripts?.build||"")?0:1)'; then
                 npm run build -- --base=/creative-experience/
               else
                 npm run build
