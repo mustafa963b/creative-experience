@@ -26,66 +26,51 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        if: hashFiles('package.json') != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Build site and select output
+      - name: Prepare static Pages site
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f package.json ]; then
-            if [ -f pnpm-lock.yaml ]; then
-              corepack enable
-              pnpm install --frozen-lockfile
-              if node -e 'const p=require("./package.json");process.exit(/\bvite\b/.test(p.scripts?.build||"")?0:1)'; then
-                pnpm run build -- --base=/creative-experience/
-              else
-                pnpm run build
-              fi
-            elif [ -f yarn.lock ]; then
-              corepack enable
-              yarn install --immutable
-              if node -e 'const p=require("./package.json");process.exit(/\bvite\b/.test(p.scripts?.build||"")?0:1)'; then
-                yarn build --base=/creative-experience/
-              else
-                yarn build
-              fi
-            else
-              if [ -f package-lock.json ]; then npm ci; else npm install; fi
-              if node -e 'const p=require("./package.json");process.exit(/\bvite\b/.test(p.scripts?.build||"")?0:1)'; then
-                npm run build -- --base=/creative-experience/
-              else
-                npm run build
-              fi
-            fi
+          test -f index.html
+          test -d assets
+          node --input-type=module <<'NODE'
+          import { existsSync, readFileSync, readdirSync } from 'node:fs';
+          import path from 'node:path';
+
+          const check = (file, reference) => {
+            const clean = decodeURIComponent(reference.split(/[?#]/, 1)[0]);
+            if (!clean || /^(?:[a-z]+:|\/\/|#)/i.test(clean)) return;
+            const target = path.resolve(path.dirname(file), clean);
+            if (!existsSync(target)) throw new Error(`Missing local asset: ${file} -> ${reference}`);
+          };
+
+          const html = readFileSync('index.html', 'utf8');
+          for (const [, reference] of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+            check('index.html', reference);
+          }
+
+          const inspectCss = directory => {
+            for (const entry of readdirSync(directory, { withFileTypes: true })) {
+              const file = path.join(directory, entry.name);
+              if (entry.isDirectory()) inspectCss(file);
+              else if (entry.isFile() && file.endsWith('.css')) {
+                const css = readFileSync(file, 'utf8');
+                for (const [, reference] of css.matchAll(/url\(\s*["']?([^)"']+)["']?\s*\)/g)) {
+                  check(file, reference.trim());
+                }
+              }
+            }
+          };
+          inspectCss('assets');
+          NODE
+
+          mkdir -p _site
+          cp index.html _site/index.html
+          cp -R assets _site/assets
+          if [ -f La_Basil_Green_Care_Cards.pdf ]; then
+            cp La_Basil_Green_Care_Cards.pdf _site/
           fi
-
-          for dir in dist build out; do
-            if [ -f "$dir/index.html" ]; then
-              echo "SITE_DIR=$dir" >> "$GITHUB_ENV"
-              echo "Publishing $dir/"
-              exit 0
-            fi
-          done
-
-          if [ -f index.html ] && [ ! -f package.json ]; then
-            mkdir -p _site
-            rsync -a ./ _site/ \
-              --exclude='_site' \
-              --exclude='.*' \
-              --exclude='node_modules' \
-              --exclude='*.lock' \
-              --exclude='package*.json'
-            echo 'SITE_DIR=_site' >> "$GITHUB_ENV"
-            echo 'Publishing static HTML site'
-            exit 0
-          fi
-
-          echo 'ERROR: No deployable index.html found. Check framework and build output.'
-          exit 1
+          echo 'SITE_DIR=_site' >> "$GITHUB_ENV"
+          echo 'Prepared static HTML, CSS, JavaScript, images, fonts, and care guide.'
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
